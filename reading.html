@@ -1,0 +1,176 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" type="text/css" href="style.css">
+    <link rel="stylesheet" type="text/css" href="bower_components/bootstrap/dist/css/bootstrap.min.css">
+    <title>Reading practice</title>
+    <link rel="stylesheet" href="bower_components/bootstrap/dist/css/bootstrap-theme.min.css">
+    <script src="tokens.js" charset="utf-8"></script>
+    <script src="hiragana.js" charset="utf-8"></script>
+    <script src="bower_components/jquery/dist/jquery.min.js"></script>
+    <script>
+        function katakanaToHiragana(s) {
+            var chars = s.split("");
+            var hira = [];
+            for (var i = 0, len = chars.length; i < len; i++) {
+                var char = chars[i];
+                if (isKatakana(char)) {
+                    var code = char.charCodeAt(0);
+                    code += 'ぁ' - 'ァ';
+                    var hiraChar = String.fromCharCode(code);
+                    hira.push(hiraChar);
+                } else {
+                    hira.push(char);
+                }
+            }
+
+            return hira.join("");
+        }
+
+        function isKatakana(s) {
+            return (s >= 'ァ' || s <= 'ン');
+        }
+
+        function isHiragana(s) {
+            for (var i = 0; i < s.length; i++) {
+                if (s[i] >= 'ぁ' || s[i] <= 'ん') {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        function hasKanji(s) {
+            for (var i = 0; i < s.length; i++) {
+                if (s[i] >= '一' && s[i] <= '龯') {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        function setEndOfContentEditable(elem) {
+            var range = document.createRange();//Create a range (a range is a like the selection but invisible)
+            range.selectNodeContents(elem);//Select the entire contents of the element with the range
+            range.collapse(false);//collapse the range to the end point. false means collapse to end rather than the start
+            var selection = window.getSelection();//get the selection object (allows you to change selection)
+            selection.removeAllRanges();//remove any selections already made
+            selection.addRange(range);//make the range you have just created the visible selection
+        }
+
+        $(document).ready(function() {
+            var correctText, matchedTokensCount, origText, tokens;
+            var inputElem = $("#editor");
+            var srcEl = $("#source-text");
+            var tokenIdx = 3;
+
+            var matchText = function() {
+                var matchTextHelper = function() {
+                    if (matchedTokensCount == tokens.length) {
+                        $("#advance").show();
+                        return;
+                    }
+
+                    inputElem.text().substring(correctText.length);
+                    var nextToken = tokens[matchedTokensCount];
+                    if (inputElem.text().length < correctText.length) {
+                        inputElem.text(correctText);
+                        return;
+                    } else if (inputElem.text().length == correctText.length) {
+                        // Advance correct text if the next token is not a kanji token
+                        if (!hasKanji(nextToken.Token)) {
+                            correctText += tokens[matchedTokensCount].Token;
+                            inputElem.text(correctText);
+                            matchedTokensCount++;
+                            matchTextHelper();
+                        }
+                    } else { // inputElem.text().length > correctText.length
+                        var inputText = correctText + asHiragana(inputElem.text().substring(correctText.length));
+                        inputElem.text(inputText);
+                        var unmatchedInputText = inputText.substring(correctText.length);
+                        var foundMatch = false;
+                        for (var i = 0; i < nextToken.ReadAs.length; i++) {
+                            if (nextToken.ReadAs[i] == unmatchedInputText) {
+                                // We matched a token !
+                                foundMatch = true;
+                                break;
+                            }
+                        }
+
+                        if (!foundMatch) {
+                            return;
+                        }
+
+                        // Update correct text, and matched tokens count.
+                        correctText = inputText;
+                        matchedTokensCount++;
+                        matchTextHelper();
+                    }
+                };
+
+                matchTextHelper();
+                setEndOfContentEditable(inputElem[0]);
+
+                if (matchedTokensCount == tokens.length) {
+                    srcEl.html('<span style="color: #39ff47">' + origText + '</span>');
+                } else {
+                    var correctLen = tokens.slice(0, matchedTokensCount).map(function (x) {
+                        return x.Token.length;
+                    }).reduce(function(acc, val) {
+                        return acc + val;
+                    }, 0);
+                    var nextToken = tokens[matchedTokensCount];
+                    srcEl.html('<span style="color: #39ff47">' + origText.substring(0, correctLen) + '</span>' +
+                        '<span style="color: #ff8053">' + origText.substring(correctLen, correctLen + nextToken.Token.length) + '</span>' +
+                        origText.substring(correctLen + nextToken.Token.length));
+                }
+            };
+
+            inputElem.on("input", function() {
+                matchText();
+            });
+
+            var updateSource = function() {
+                $.getJSON("http://localhost:8080/get-token/" + tokenIdx, function(data) {
+                    $("#advance").hide();
+                    tokens = data;
+                    origText = data.map(function(d) { return d.Token; }).join("");
+                    srcEl.text(origText);
+                    inputElem.attr("contenteditable", "true");
+                    inputElem.focus();
+                    inputElem.text("");
+                    correctText = "";
+                    matchedTokensCount = 0;
+                    matchText();
+                });
+            };
+            updateSource();
+
+            $("#advance").click(function () {
+                tokenIdx++;
+               updateSource();
+            })
+        });
+    </script>
+</head>
+<body>
+<div class="container">
+    <div class="row top-buffer">
+        <!-- <div class="col-fixed-160"></div> -->
+        <div class="col-md-12 col-offset-240">
+            <p id="source-text"></p>
+            <article id="editor">
+            </article>
+            <button id="advance" class="btn btn-default btn-lg">Advance</button>
+        </div>
+        <!-- <div class="col-fixed-160"></div> -->
+    </div>
+</div>
+<script src="bower_components/bootstrap/dist/js/bootstrap.min.js"></script>
+</body>
+</html>
